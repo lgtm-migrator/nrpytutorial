@@ -9,6 +9,8 @@
     # Email: ksible *at* outlook *dot* com
 
 import re, sys
+import NRPy_param_funcs as par
+from outputC import superfast_uniq
 
 def loop1D(idx_var='i', lower_bound='0', upper_bound='N', increment='1', pragma='#pragma omp parallel for', padding=''):
     """ Generate a one-dimensional loop in C.
@@ -201,7 +203,90 @@ def simple_loop(options, interior):
     elif "pragma_on_i0" in options:
         loop_order = ["", Read_1Darrays[2], Read_1Darrays[1] + "\n" + padding*3 + pragma]
 
-    return loop(["i2", "i1", "i0"], i2i1i0_mins, i2i1i0_maxs, increment, loop_order,
+    loop_vars = ["i2", "i1", "i0"]
+
+    # Adjust all parameters that go into the loop() function
+    # call to reduce dimensionality from 3D to 2D or 1D.
+    symmetry_axes = sorted(par.parval_from_str("indexedexp::symmetry_axes"))
+    if len(symmetry_axes) > 2:
+        raise ValueError('maximum of 2 symmetry axes supported. Input was: '+par.parval_from_str("indexedexp::symmetry_axes"))
+    else:
+        # Check for correct input
+        if len(symmetry_axes) != len(superfast_uniq(symmetry_axes)):
+            raise ValueError('same axis appears twice as symmetry axes. Input was: '+par.parval_from_str("indexedexp::symmetry_axes"))
+        for ax in symmetry_axes:
+            if ax not in '012':
+                raise ValueError('unexpected value in symmetry axes: '+str(symmetry_axes))
+    if symmetry_axes[0] == '0':
+        if len(symmetry_axes) > 1:
+            loop_order     = ["", "", pragma]
+            i2i1i0_mins[0] = i2i1i0_mins[1] = "0"
+            i2i1i0_maxs[0] = i2i1i0_maxs[1] = "1"
+            increment[0]   = increment[1]   = "1"
+            if symmetry_axes[1] == '1':
+                # 01 are symmetry axes
+                # Swap loop order so that i2 is the inner loop
+                loop_vars        = ["i1", "i0", "i2"]
+                i2i1i0_mins[2]   = i2i1i0_mins[0]
+                i2i1i0_maxs[2]   = i2i1i0_maxs[0]
+                Read_1Darrays[0] = Read_1Darrays[2]
+            else:
+                # 02 are symmetry axes
+                # Swap loop order so that i1 is the inner loop
+                loop_vars        = ["i2", "i0", "i1"]
+                i2i1i0_mins[2]   = i2i1i0_mins[1]
+                i2i1i0_maxs[2]   = i2i1i0_maxs[1]
+                Read_1Darrays[0] = Read_1Darrays[1]
+        else:
+            # Only 0 is the symmetry axis
+            # Swap loop order so that i0 is the outer loop
+            loop_vars        = ["i0", "i2", "i1"]
+            i2i1i0_mins[2]   = i2i1i0_mins[1]
+            i2i1i0_maxs[2]   = i2i1i0_maxs[1]
+            i2i1i0_mins[1]   = i2i1i0_mins[0]
+            i2i1i0_maxs[1]   = i2i1i0_maxs[0]
+            i2i1i0_mins[0]   = "0"
+            i2i1i0_maxs[0]   = "1"
+            increment[0]     = "1"
+            Read_1Darrays[0] = Read_1Darrays[1]
+            Read_1Darrays[1] = Read_1Darrays[2]
+            if "pragma_on_i1" in options:
+                loop_order = ["", "", Read_1Darrays[1] + "\n" + padding*3 + pragma]
+            else:
+                loop_order = ["", pragma, Read_1Darrays[1]]
+    elif symmetry_axes[0] == '1':
+        if len(symmetry_axes) > 1:
+            # 12 are symmetry axes
+            i2i1i0_mins[0] = i2i1i0_mins[1] = "0"
+            i2i1i0_maxs[0] = i2i1i0_maxs[1] = "1"
+            increment[0]   = increment[1]   = "1"
+            loop_order     = ["", "", pragma]
+        else:
+            # Only 1 is the symmetry axis
+            # Swap loop order so that i1 is the outer loop
+            loop_vars        = ["i1", "i2", "i0"]
+            i2i1i0_mins[1]   = i2i1i0_mins[0]
+            i2i1i0_maxs[1]   = i2i1i0_maxs[0]
+            Read_1Darrays[1] = Read_1Darrays[2]
+            i2i1i0_mins[0]   = "0"
+            i2i1i0_maxs[0]   = "1"
+            increment[0]     = "1"
+            if "pragma_on_i0" in options:
+                loop_order = ["", "", Read_1Darrays[1] + "\n" + padding*3 + pragma]
+            else:
+                loop_order = ["", pragma, Read_1Darrays[1]]
+    else:
+        # Only 2 is the symmetry axis
+        i2i1i0_mins[0] = "0"
+        i2i1i0_maxs[0] = "1"
+        increment[0]   = "1"
+        if "pragma_on_i0" in options:
+            loop_order = ["", "", Read_1Darrays[1] + "\n" + padding*3 + pragma]
+        else:
+            loop_order = ["", pragma, Read_1Darrays[1]]
+            
+
+    return loop(loop_vars, i2i1i0_mins, i2i1i0_maxs, increment, loop_order,
                 padding=padding, interior=Read_1Darrays[0] + ("\n" if Read_1Darrays[0] else "") + interior)
 
 if __name__ == "__main__":
