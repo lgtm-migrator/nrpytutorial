@@ -1468,7 +1468,47 @@ def add_to_Cfunction_dict_find_timestep():
     delxx = ixp.declarerank1("dxx", DIM=3)
     ds_drn = ds_dirn(delxx)
 
-    ds_dirn_h = outputC([ds_drn[0], ds_drn[1], ds_drn[2]], ["ds_dirn0", "ds_dirn1", "ds_dirn2"],"returnstring")
+    symmetry_axes = sorted(par.parval_from_str("indexedexp::symmetry_axes"))
+    if len(symmetry_axes) > 0:
+        if len(symmetry_axes) > 2:
+            raise ValueError('maximum of 2 symmetry axes supported. Input was: '+par.parval_from_str("indexedexp::symmetry_axes"))
+        else:
+            # Check for correct input
+            if len(symmetry_axes) != len(set(symmetry_axes)):
+                raise ValueError('same axis appears twice as symmetry axes. Input was: '+par.parval_from_str("indexedexp::symmetry_axes"))
+            for ax in symmetry_axes:
+                if ax not in '012':
+                    raise ValueError('unexpected value in symmetry axes: '+str(symmetry_axes))
+        if symmetry_axes[0] == '0':
+            if len(symmetry_axes) > 1:
+                if symmetry_axes[0] == '1':
+                    # 01 are symmetry axes
+                    ds_dirn_h = outputC([ds_drn[2]], ["ds_dirn2"],"returnstring")
+                    ds_min_h = "dsmin = MIN(dsmin,ds_dirn2);"
+                else:
+                    # 02 are symmetry axes
+                    ds_dirn_h = outputC([ds_drn[1]], ["ds_dirn1"],"returnstring")
+                    ds_min_h = "dsmin = MIN(dsmin,ds_dirn1);"
+            else:
+                # 0 is the symmetry axis
+                ds_dirn_h = outputC([ds_drn[1], ds_drn[2]], ["ds_dirn1", "ds_dirn2"],"returnstring")
+                ds_min_h = "dsmin = MIN(dsmin,MIN(ds_dirn1,ds_dirn2));"
+        elif symmetry_axes[0] == '1':
+            if len(symmetry_axes) > 1:
+                # 12 are symmetry axes
+                ds_dirn_h = outputC([ds_drn[0]], ["ds_dirn0"],"returnstring")
+                ds_min_h = "dsmin = MIN(dsmin,ds_dirn0);"
+            else:
+                # 1 is the symmetry axis
+                ds_dirn_h = outputC([ds_drn[0], ds_drn[2]], ["ds_dirn0", "ds_dirn2"],"returnstring")
+                ds_min_h = "dsmin = MIN(dsmin,MIN(ds_dirn0,ds_dirn2));"
+        else:
+            # 2 is the symmetry axis
+            ds_dirn_h = outputC([ds_drn[0], ds_drn[1]], ["ds_dirn0", "ds_dirn1"],"returnstring")
+            ds_min_h = "dsmin = MIN(dsmin,MIN(ds_dirn0,ds_dirn1));"
+    else:
+        ds_dirn_h = outputC([ds_drn[0], ds_drn[1], ds_drn[2]], ["ds_dirn0", "ds_dirn1", "ds_dirn2"],"returnstring")
+        ds_min_h = "dsmin = MIN(dsmin,MIN(ds_dirn0,MIN(ds_dirn1,ds_dirn2)));"
 
     desc="Find the CFL-constrained timestep"
     add_to_Cfunction_dict(
@@ -1482,8 +1522,7 @@ def add_to_Cfunction_dict_find_timestep():
 #define MIN(A, B) ( ((A) < (B)) ? (A) : (B) )
 #endif
         // Set dsmin = MIN(dsmin, ds_dirn0, ds_dirn1, ds_dirn2);
-        dsmin = MIN(dsmin,MIN(ds_dirn0,MIN(ds_dirn1,ds_dirn2)));
-""",
+"""+ds_min_h,
         loopopts ="InteriorPoints,Read_xxs,DisableOpenMP",
         postloop ="return dsmin*CFL_FACTOR/wavespeed;\n")
 
